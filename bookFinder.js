@@ -1,6 +1,9 @@
 const jobForm = document.getElementById('job-form');
 const bookList = document.getElementById('book-list');
 let jobCategories = {};
+let currentQuery = ''; // 현재 검색 쿼리
+let currentIndex = 0; // 현재 시작 인덱스
+let isFetching = false; // 데이터를 가져오는 중인지 확인
 
 // JSON 파일 로드
 fetch('job.json')
@@ -18,15 +21,20 @@ fetch('job.json')
 
 // 책 데이터를 가져오는 함수
 function fetchBooks(query) {
-    const apiKey = 'AIzaSyCiwV0bCzsHesAM8hZcZ_MtAykX4xLkUO8';
-    const apiUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=5&key=${apiKey}`;
+    if (isFetching) return; // 이미 데이터를 가져오는 중이면 실행하지 않음
+    isFetching = true;
 
-    bookList.innerHTML = '<p>추천 도서를 가져오는 중...</p>';
+    const apiKey = 'AIzaSyCiwV0bCzsHesAM8hZcZ_MtAykX4xLkUO8';
+    const apiUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&startIndex=${currentIndex}&maxResults=10&key=${apiKey}`;
+
+    bookList.innerHTML += '<p id="loading-text">추천 도서를 가져오는 중...</p>';
 
     fetch(apiUrl)
         .then(response => response.json())
         .then(data => {
-            bookList.innerHTML = '';
+            document.getElementById('loading-text').remove();
+            isFetching = false;
+
             if (data.items && data.items.length > 0) {
                 data.items.forEach(item => {
                     const book = item.volumeInfo;
@@ -48,31 +56,33 @@ function fetchBooks(query) {
                     `;
                     bookList.appendChild(bookItem);
                 });
+
+                // 다음 페이지를 가져오기 위해 인덱스 업데이트
+                currentIndex += 10;
             } else {
-                bookList.innerHTML = '<p>관련 도서를 찾을 수 없습니다.</p>';
+                bookList.innerHTML += '<p>더 이상 관련 도서를 찾을 수 없습니다.</p>';
             }
         })
         .catch(error => {
             console.error('Error fetching books:', error);
-            bookList.innerHTML = '<p>도서를 가져오는 중 오류가 발생했습니다. 다시 시도해주세요.</p>';
+            isFetching = false;
+            document.getElementById('loading-text').remove();
+            bookList.innerHTML += '<p>도서를 가져오는 중 오류가 발생했습니다. 다시 시도해주세요.</p>';
         });
 }
 
-// 검색 폼 제출 이벤트
+// 직업 폼 제출 이벤트
 jobForm.addEventListener('submit', function (event) {
     event.preventDefault();
     const searchQuery = document.getElementById('job-input').value.trim().toLowerCase();
 
     let foundKeywords = null;
 
-    // JSON 데이터에서 검색어에 해당하는 키워드 찾기
     for (const [job, details] of Object.entries(jobCategories)) {
         const { category, keywords } = details;
 
         if (
-            job.toLowerCase() === searchQuery || // 직업명 매칭
-            category.toLowerCase() === searchQuery || // 카테고리 매칭
-            keywords.some(keyword => keyword.toLowerCase().includes(searchQuery)) // 키워드 매칭
+            job.toLowerCase() === searchQuery || category.toLowerCase() === searchQuery || keywords.some(keyword => keyword.toLowerCase().includes(searchQuery))
         ) {
             foundKeywords = keywords;
             break;
@@ -80,9 +90,19 @@ jobForm.addEventListener('submit', function (event) {
     }
 
     if (foundKeywords) {
-        // 키워드 중 하나를 Google Books API에 사용 (우선 첫 번째 키워드 선택)
-        fetchBooks(foundKeywords[0]);
+        // 검색 초기화
+        currentQuery = foundKeywords[0];
+        currentIndex = 0;
+        bookList.innerHTML = '';
+        fetchBooks(currentQuery);
     } else {
         bookList.innerHTML = '<p>관련 직업 또는 키워드를 찾을 수 없습니다.</p>';
+    }
+});
+
+// 무한 스크롤 구현
+window.addEventListener('scroll', () => {
+    if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 100 && currentQuery) {
+        fetchBooks(currentQuery);
     }
 });
